@@ -36,12 +36,17 @@ AbortNSIMLoopOnFirstFail = True;
 
 # If True, skip running tests and collect results from any archive directories found.
 
-CollectOnly = False;
+CollectOnly = True;
 
 # Path to the data output file.
 # ** As the script would overwrite this file, it will crash if it already exists when it starts [again, better safe than sorry...] **
 
 DataOutputFile = "GPUTest.csv";
+
+# If larger than zero, the first N SCF steps will be ignored when computing the average SCF time.
+# Useful for benchmarking e.g. ALGO = Fast or hybrids, where the first five SCF steps (typically) are very different to the others.
+
+SkipSCFCycles = 5;
 
 
 import commands;
@@ -74,189 +79,216 @@ def _GetArchiveDirName(template, nproc, nsim, kpar, npar):
     
     return jobDir;
 
-
-# Startup checks.
-
-# ArchiveDirName is required regardless of CollectOnly.
-
-if "<nproc>" not in ArchiveDirName or "<nsim>" not in ArchiveDirName:
-    raise Exception("Error: The strings \"<nproc>\" and \"<nsim>\" must appear in ArchiveDirName.");
-
-# DataOutputFile must not exist regardless of CollectOnly.
-
-if os.path.isfile(DataOutputFile):
-    raise Exception("Error: DataOutputFile \"{0}\" already exists - please rename/delete and run again.".format(DataOutputFile));
-
-if not CollectOnly:
-    # These other checks are only needed if CollectOnly is False.
-
-    if os.path.isdir(RunDir):
-        raise Exception("Error: RunDir \"{0}\" already exists - please remove and run again.".format(RunDir));
+def _ParseOUTCAR(filePath, skipSCFCycles = 0):
+    numSCFSteps, tSCFAve, tElapsed = None, None, None;
     
-    if "<nproc>" not in VASPRunCommand:
-        raise Exception("Error: The string \"<nproc>\" must appear in VASPRunCommand.");
+    scfTimes = [];
     
-    for vaspInputFile in "INCAR", "KPOINTS", "POSCAR", "POTCAR":
-        if not os.path.isfile(vaspInputFile):
-            raise Exception("Error: Required VASP input file \"{0}\" not found.".format(vaspInputFile));
-    
-    with open("INCAR", 'r') as inputReader:
+    with open(filePath, 'r') as inputReader:
         for line in inputReader:
-            if "KPAR" in line or "NPAR" in line or "NSIM" in line:
-                raise Exception("Error: INCAR file must not contain the KPAR, NPAR or NSIM control tags - these are set by the script.");
+            match = _OUTCAR_TSCFRegex.search(line);
+            
+            if match:
+                scfTimes.append(
+                    float(match.group('t_scf'))
+                    );
+            else:
+                match = _OUTCAR_TElapsedRegex.search(line);
+                
+                if match:
+                    tElapsed = float(match.group('t_elapsed'));
 
-if not CollectOnly:
+    if skipSCFCycles > 0:
+        if len(scfTimes) > skipSCFCycles:
+            scfTimes = scfTimes[skipSCFCycles:];
+        else:
+            print("WARNING: _ParseOUTCAR(): Number of SCF steps {0} <= skipSCFCycles {1}".format(len(scfTimes), skipSCFCycles));
+            scfTimes = [];
+    
+    if len(scfTimes) > 0:                        
+        numSCFSteps = len(scfTimes);
+        tSCFAve = sum(scfTimes) / numSCFSteps;
+    
+    return (numSCFSteps, tSCFAve, tElapsed);
+
+def _ParseOSZICAR(filePath):
+    finalTotalEnergy = None;
+    
+    with open(filePath, 'r') as inputReader:
+        for line in inputReader:
+            match = _OSZICAR_TotalEnergyRegex.search(line);
+            
+            if match:
+                finalTotalEnergy = float(match.group('total_energy'));
+    
+    return finalTotalEnergy;
+
+def _CollectResults(vaspDirectory, outcarSkipSCFCycles = 0):
+    numSCFSteps, tSCFAve, tElapsed = None, None, None;
+    
+    outcarPath = os.path.join(vaspDirectory, "OUTCAR");
+    
+    if os.path.isfile(outcarPath):
+        numSCFSteps, tSCFAve, tElapsed = _ParseOUTCAR(outcarPath, skipSCFCycles = outcarSkipSCFCycles);
+    else:
+        print("WARNING: _CollectResults(): \"{0}\" not found".format(outcarPath));
+    
+    finalTotalEnergy = None;
+    
+    oszicarPath = os.path.join(vaspDirectory, "OSZICAR");
+    
+    if os.path.isfile(oszicarPath):
+        finalTotalEnergy = _ParseOSZICAR(oszicarPath);
+    else:
+        print("WARNING: _CollectResults(): \"{0}\" not found".format(oszicarPath));
+    
+    return (numSCFSteps, tSCFAve, tElapsed, finalTotalEnergy);
+
+
+if __name__ == "__main__":
+    # Startup checks.
+    
+    # ArchiveDirName is required regardless of CollectOnly.
+    
+    if "<nproc>" not in ArchiveDirName or "<nsim>" not in ArchiveDirName:
+        raise Exception("Error: The strings \"<nproc>\" and \"<nsim>\" must appear in ArchiveDirName.");
+    
+    # DataOutputFile must not exist regardless of CollectOnly.
+    
+    if os.path.isfile(DataOutputFile):
+        raise Exception("Error: DataOutputFile \"{0}\" already exists - please rename/delete and run again.".format(DataOutputFile));
+    
+    if not CollectOnly:
+        # These other checks are only needed if CollectOnly is False.
+    
+        if os.path.isdir(RunDir):
+            raise Exception("Error: RunDir \"{0}\" already exists - please remove and run again.".format(RunDir));
+        
+        if "<nproc>" not in VASPRunCommand:
+            raise Exception("Error: The string \"<nproc>\" must appear in VASPRunCommand.");
+        
+        for vaspInputFile in "INCAR", "KPOINTS", "POSCAR", "POTCAR":
+            if not os.path.isfile(vaspInputFile):
+                raise Exception("Error: Required VASP input file \"{0}\" not found.".format(vaspInputFile));
+        
+        with open("INCAR", 'r') as inputReader:
+            for line in inputReader:
+                if "KPAR" in line or "NPAR" in line or "NSIM" in line:
+                    raise Exception("Error: INCAR file must not contain the KPAR, NPAR or NSIM control tags - these are set by the script.");
+    
+    if not CollectOnly:
+        for numProcesses in TestNumProcesses:
+            kparValue, nparValue = _CalculateKPARAndNPAR(numProcesses, TargetKPARValues);
+            
+            for nsimValue in TestNSIMValues:
+                jobDir = _GetArchiveDirName(ArchiveDirName, numProcesses, nsimValue, kparValue, nparValue);
+        
+                if os.path.exists(jobDir):
+                    print("Job dir \"{0}\" (# proc = {1}, NSIM = {2}) already exists -> skipping...".format(jobDir, numProcesses, nsimValue));
+                    print("");
+                    
+                    continue;
+                
+                os.mkdir(RunDir);
+                
+                os.chdir(RunDir);
+                
+                with open("INCAR", 'w') as outputWriter:
+                    with open("../INCAR", 'r') as inputReader:
+                        for line in inputReader:
+                            outputWriter.write(line);
+                    
+                    outputWriter.write("\n");            
+                    
+                    outputWriter.write("! Parameters automatically added by GPUTest.py.\n");
+                    outputWriter.write("\n");
+                    
+                    outputWriter.write("KPAR = {0}\n".format(kparValue));
+                    outputWriter.write("NPAR = {0}\n".format(nparValue));
+                    outputWriter.write("NSIM = {0}\n".format(nsimValue));
+                
+                for vaspInputFile in "KPOINTS", "POSCAR", "POTCAR":
+                    shutil.copy("../{0}".format(vaspInputFile), vaspInputFile);
+                
+                print("Running test with # proc = {0}, NSIM = {1}...".format(numProcesses, nsimValue));
+                
+                status, output = commands.getstatusoutput(
+                    VASPRunCommand.replace("<nproc>", str(numProcesses))
+                    );
+                
+                print("  -> Exit status: {0}".format(status));
+                
+                os.chdir("..");
+                
+                stdOutFile = "{0}.out".format(jobDir);
+                
+                print("  -> Writing std out to \"{0}\"".format(jobDir));
+                
+                with open(stdOutFile, 'w') as outputWriter:
+                    outputWriter.write(output);
+                
+                if status == 0:
+                    print("  -> Renaming run directory to \"{0}\"".format(jobDir));
+                    os.rename(RunDir, jobDir);
+                else:
+                    shutil.rmtree(RunDir);
+                    
+                    if AbortNSIMLoopOnFirstFail:
+                        break;
+                
+                print("");
+    
+    print("Collecting results...");
+    
+    data = { };
+    
     for numProcesses in TestNumProcesses:
         kparValue, nparValue = _CalculateKPARAndNPAR(numProcesses, TargetKPARValues);
         
         for nsimValue in TestNSIMValues:
             jobDir = _GetArchiveDirName(ArchiveDirName, numProcesses, nsimValue, kparValue, nparValue);
+            
+            if os.path.isdir(jobDir):
+                numSCFSteps, tSCFAve, tElapsed, finalTotalEnergy = _CollectResults(jobDir, outcarSkipSCFCycles = SkipSCFCycles);
+                
+                if numSCFSteps != None and tSCFAve != None and tElapsed != None and finalTotalEnergy != None:
+                    print("  -> Collected data for # proc = {0}, NSIM = {1}".format(numProcesses, nsimValue));
+                    data[(numProcesses, nsimValue)] = (kparValue, nparValue, numSCFSteps, tSCFAve, tElapsed, finalTotalEnergy);
+                else:
+                    print("  -> Failed to collect data for # proc = {0}, NSIM = {1}".format(numProcesses, nsimValue));
+            else:
+                print("  -> Archive dir \"{0}\" not found -> skipping # proc = {1}, NSIM = {2}".format(jobDir, numProcesses, nsimValue));
     
-            if os.path.exists(jobDir):
-                print("Job dir \"{0}\" (# proc = {1}, NSIM = {2}) already exists -> skipping...".format(jobDir, numProcesses, nsimValue));
-                print("");
-                
-                continue;
-            
-            os.mkdir(RunDir);
-            
-            os.chdir(RunDir);
-            
-            with open("INCAR", 'w') as outputWriter:
-                with open("../INCAR", 'r') as inputReader:
-                    for line in inputReader:
-                        outputWriter.write(line);
-                
-                outputWriter.write("\n");            
-                
-                outputWriter.write("! Parameters automatically added by GPUTest.py.\n");
-                outputWriter.write("\n");
-                
-                outputWriter.write("KPAR = {0}\n".format(kparValue));
-                outputWriter.write("NPAR = {0}\n".format(nparValue));
-                outputWriter.write("NSIM = {0}\n".format(nsimValue));
-            
-            for vaspInputFile in "KPOINTS", "POSCAR", "POTCAR":
-                shutil.copy("../{0}".format(vaspInputFile), vaspInputFile);
-            
-            print("Running test with # proc = {0}, NSIM = {1}...".format(numProcesses, nsimValue));
-            
-            status, output = commands.getstatusoutput(
-                VASPRunCommand.replace("<nproc>", str(numProcesses))
-                );
-            
-            print("  -> Exit status: {0}".format(status));
-            
-            os.chdir("..");
-            
-            stdOutFile = "{0}.out".format(jobDir);
-            
-            print("  -> Writing std out to \"{0}\"".format(jobDir));
-            
-            with open(stdOutFile, 'w') as outputWriter:
-                outputWriter.write(output);
-            
-            if status == 0:
-                print("  -> Renaming run directory to \"{0}\"".format(jobDir));
-                os.rename(RunDir, jobDir);
-            else:
-                shutil.rmtree(RunDir);
-                
-                if AbortNSIMLoopOnFirstFail:
-                    break;
-            
-            print("");
-
-print("Collecting results...");
-
-data = { };
-
-for numProcesses in TestNumProcesses:
-    kparValue, nparValue = _CalculateKPARAndNPAR(numProcesses, TargetKPARValues);
+    print("");
     
-    for nsimValue in TestNSIMValues:
-        jobDir = _GetArchiveDirName(ArchiveDirName, numProcesses, nsimValue, kparValue, nparValue);
+    if len(data) > 0:
+        print("Writing data to \"{0}\"...".format(DataOutputFile));
         
-        if os.path.isdir(jobDir):
-            numSCFSteps, tSCFAve, tElapsed = None, None, None;
+        with open(DataOutputFile, 'w') as outputWriter:
+            outputWriterCSV = csv.writer(outputWriter, delimiter = ',', quotechar = '\"', quoting = csv.QUOTE_ALL);
             
-            outcarPath = os.path.join(jobDir, "OUTCAR");
+            outputWriterCSV.writerow(["# Proc", "NSIM", "KPAR", "NPAR", "# SCF Steps", "t_SCF,Ave [s]", "t_Elapsed [s]", "Final E_0 [eV]"]);
             
-            if os.path.isfile(outcarPath):
-                scfTimes = [];
-                
-                with open(outcarPath, 'r') as inputReader:
-                    for line in inputReader:
-                        match = _OUTCAR_TSCFRegex.search(line);
-                        
-                        if match:
-                            scfTimes.append(
-                                float(match.group('t_scf'))
-                                );
-                        else:
-                            match = _OUTCAR_TElapsedRegex.search(line);
-                            
-                            if match:
-                                tElapsed = float(match.group('t_elapsed'));
-                
-                if len(scfTimes) > 0:
-                    numSCFSteps = len(scfTimes);
-                    tSCFAve = sum(scfTimes) / numSCFSteps;            
-            else:
-                print("  -> WARNING: \"{0}\" not found".format(outcarPath));
+            for key in sorted(data.keys()):
+                outputWriterCSV.writerow(key + data[key]);
             
-            finalTotalEnergy = None;
-            
-            oszicarPath = os.path.join(jobDir, "OSZICAR");
-            
-            if os.path.isfile(oszicarPath):
-                with open(oszicarPath, 'r') as inputReader:
-                    for line in inputReader:
-                        match = _OSZICAR_TotalEnergyRegex.search(line);
-                        
-                        if match:
-                            finalTotalEnergy = float(match.group('total_energy'));
-            else:
-                print("  -> WARNING: \"{0}\" not found".format(outcarPath));
-            
-            if numSCFSteps != None and tSCFAve != None and tElapsed != None and finalTotalEnergy != None:
-                print("  -> Collected data for # proc = {0}, NSIM = {1}".format(numProcesses, nsimValue));
-                data[(numProcesses, nsimValue)] = (kparValue, nparValue, numSCFSteps, tSCFAve, tElapsed, finalTotalEnergy);
-            else:
-                print("  -> Failed to collect data for # proc = {0}, NSIM = {1}".format(numProcesses, nsimValue));
-        else:
-            print("  -> Archive dir \"{0}\" not found -> skipping # proc = {1}, NSIM = {2}".format(jobDir, numProcesses, nsimValue));
-
-print("");
-
-if len(data) > 0:
-    print("Writing data to \"{0}\"...".format(DataOutputFile));
-    
-    with open(DataOutputFile, 'w') as outputWriter:
-        outputWriterCSV = csv.writer(outputWriter, delimiter = ',', quotechar = '\"', quoting = csv.QUOTE_ALL);
-        
-        outputWriterCSV.writerow(["# Proc", "NSIM", "KPAR", "NPAR", "# SCF Steps", "t_SCF,Ave [s]", "t_Elapsed [s]", "Final E_0 [eV]"]);
-        
-        for key in sorted(data.keys()):
-            outputWriterCSV.writerow(key + data[key]);
-        
-        outputWriterCSV.writerow([]);
-        
-        for matrixHeader, matrixColumn in ("# SCF Steps", 2), ("t_SCF,Ave [s]", 3), ("t_Elapsed [s]", 4):
-            outputWriterCSV.writerow(["Data: {0}".format(matrixHeader)]);
             outputWriterCSV.writerow([]);
             
-            outputWriterCSV.writerow(["", "NSIM"]);
-            outputWriterCSV.writerow(["# Proc"] + TestNSIMValues);
-            
-            for numProcesses in TestNumProcesses:
-                outputWriterCSV.writerow(
-                    [numProcesses] + [
-                        data[(numProcesses, nsimValue)][matrixColumn] if (numProcesses, nsimValue) in data else '-'
-                            for nsimValue in TestNSIMValues
-                            ]
-                    );
-            
-            outputWriterCSV.writerow([]);
-else:
-    print("No data collected - please check the *.out files from VASP jobs");
+            for matrixHeader, matrixColumn in ("# SCF Steps", 2), ("t_SCF,Ave [s]", 3), ("t_Elapsed [s]", 4):
+                outputWriterCSV.writerow(["Data: {0}".format(matrixHeader)]);
+                outputWriterCSV.writerow([]);
+                
+                outputWriterCSV.writerow(["", "NSIM"]);
+                outputWriterCSV.writerow(["# Proc"] + TestNSIMValues);
+                
+                for numProcesses in TestNumProcesses:
+                    outputWriterCSV.writerow(
+                        [numProcesses] + [
+                            data[(numProcesses, nsimValue)][matrixColumn] if (numProcesses, nsimValue) in data else '-'
+                                for nsimValue in TestNSIMValues
+                                ]
+                        );
+                
+                outputWriterCSV.writerow([]);
+    else:
+        print("No data collected - please check the *.out files from VASP jobs");
