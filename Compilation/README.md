@@ -3,6 +3,7 @@ Building `vasp_gpu` on Balena
 
 These instructions are for building VASP 5.4.1 (05Feb16 revision) on the University of Bath's [Balena](http://www.bath.ac.uk/bucs/services/hpc/facilities/) HPC cluster.
 
+
 Modules
 -------
 
@@ -13,6 +14,7 @@ VASP 5.4.1 was build with the following modules:
 - `openmpi/intel/1.8.4`
 - `cuda/toolkit/7.5.18`
 
+
 Compilation
 -----------
 
@@ -20,8 +22,9 @@ Compilation
 
 - Compile the binaries, including the `gpu` and `gpu_ncl` targets: `make std gam ncl gpu gpu_ncl`.
 
+
 Running Jobs
 ------------
 
 Running jobs with the GPU-enabled versions of VASP requires a modified SLURM script to request a GPU-equipped node and to perform some setup tasks.
-See the sample submission script in [GPUTest](../GPUTest) for an example.
+See the sample submission script in [Scripts](../Scripts) for an example.

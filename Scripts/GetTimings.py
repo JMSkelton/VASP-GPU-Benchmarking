@@ -4,10 +4,7 @@
 import argparse;
 import os;
 
-# Uses the _CollectResults() function from GPUTest.py.
-# It would probably be cleaner to copy/paste, but this avoids having to keep two copies in sync; at the moment, the logic in _CollectResults() doesn't warrant being a separate module.
-
-from GPUTest import _CollectResults;
+from Shared import CollectResults;
 
 
 if __name__ == "__main__":
@@ -35,7 +32,7 @@ if __name__ == "__main__":
         if os.path.isdir(vaspDirectory):
             print("Analysing \"{0}\"...".format(vaspDirectory));
             
-            numSCFSteps, tSCFAve, tElapsed, finalTotalEnergy = _CollectResults(vaspDirectory, outcarSkipSCFCycles = args.SkipSCFCycles);
+            numSCFSteps, tSCFAve, tElapsed, finalTotalEnergy = CollectResults(vaspDirectory, outcarSkipSCFCycles = args.SkipSCFCycles);
                     
             if numSCFSteps != None and tSCFAve != None and tElapsed != None and finalTotalEnergy != None:
                 print("  -> # SCF steps: {0}".format(numSCFSteps));

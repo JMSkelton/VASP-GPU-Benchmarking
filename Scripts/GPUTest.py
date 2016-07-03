@@ -3,7 +3,7 @@
 
 # Numbers of MPI processes to test.
 
-TestNumProcesses = [4, 8, 12, 16];
+TestNumProcesses = [1, 2, 4, 8, 12, 16];
 
 # Values of NSIM to test.
 
@@ -36,7 +36,7 @@ AbortNSIMLoopOnFirstFail = True;
 
 # If True, skip running tests and collect results from any archive directories found.
 
-CollectOnly = True;
+CollectOnly = False;
 
 # Path to the data output file.
 # ** As the script would overwrite this file, it will crash if it already exists when it starts [again, better safe than sorry...] **
@@ -52,14 +52,10 @@ SkipSCFCycles = 5;
 import commands;
 import csv;
 import os;
-import re;
+
 import shutil;
 
-
-_OUTCAR_TSCFRegex = re.compile("LOOP\:\s+cpu time\s+\d+\.\d+\:\s+real time\s+(?P<t_scf>\d+\.\d+)");
-_OUTCAR_TElapsedRegex = re.compile("Elapsed time \(sec\)\:\s+(?P<t_elapsed>\d+\.\d+)");
-
-_OSZICAR_TotalEnergyRegex = re.compile("E0= (?P<total_energy>[+-]?\d*\.\d+E[+-]?\d+)");
+from Shared import CollectResults;
 
 
 def _CalculateKPARAndNPAR(numProcesses, targetKPARValues):
@@ -78,71 +74,6 @@ def _GetArchiveDirName(template, nproc, nsim, kpar, npar):
         jobDir = jobDir.replace(find, str(replace));
     
     return jobDir;
-
-def _ParseOUTCAR(filePath, skipSCFCycles = 0):
-    numSCFSteps, tSCFAve, tElapsed = None, None, None;
-    
-    scfTimes = [];
-    
-    with open(filePath, 'r') as inputReader:
-        for line in inputReader:
-            match = _OUTCAR_TSCFRegex.search(line);
-            
-            if match:
-                scfTimes.append(
-                    float(match.group('t_scf'))
-                    );
-            else:
-                match = _OUTCAR_TElapsedRegex.search(line);
-                
-                if match:
-                    tElapsed = float(match.group('t_elapsed'));
-
-    if skipSCFCycles > 0:
-        if len(scfTimes) > skipSCFCycles:
-            scfTimes = scfTimes[skipSCFCycles:];
-        else:
-            print("WARNING: _ParseOUTCAR(): Number of SCF steps {0} <= skipSCFCycles {1}".format(len(scfTimes), skipSCFCycles));
-            scfTimes = [];
-    
-    if len(scfTimes) > 0:                        
-        numSCFSteps = len(scfTimes);
-        tSCFAve = sum(scfTimes) / numSCFSteps;
-    
-    return (numSCFSteps, tSCFAve, tElapsed);
-
-def _ParseOSZICAR(filePath):
-    finalTotalEnergy = None;
-    
-    with open(filePath, 'r') as inputReader:
-        for line in inputReader:
-            match = _OSZICAR_TotalEnergyRegex.search(line);
-            
-            if match:
-                finalTotalEnergy = float(match.group('total_energy'));
-    
-    return finalTotalEnergy;
-
-def _CollectResults(vaspDirectory, outcarSkipSCFCycles = 0):
-    numSCFSteps, tSCFAve, tElapsed = None, None, None;
-    
-    outcarPath = os.path.join(vaspDirectory, "OUTCAR");
-    
-    if os.path.isfile(outcarPath):
-        numSCFSteps, tSCFAve, tElapsed = _ParseOUTCAR(outcarPath, skipSCFCycles = outcarSkipSCFCycles);
-    else:
-        print("WARNING: _CollectResults(): \"{0}\" not found".format(outcarPath));
-    
-    finalTotalEnergy = None;
-    
-    oszicarPath = os.path.join(vaspDirectory, "OSZICAR");
-    
-    if os.path.isfile(oszicarPath):
-        finalTotalEnergy = _ParseOSZICAR(oszicarPath);
-    else:
-        print("WARNING: _CollectResults(): \"{0}\" not found".format(oszicarPath));
-    
-    return (numSCFSteps, tSCFAve, tElapsed, finalTotalEnergy);
 
 
 if __name__ == "__main__":
@@ -249,7 +180,7 @@ if __name__ == "__main__":
             jobDir = _GetArchiveDirName(ArchiveDirName, numProcesses, nsimValue, kparValue, nparValue);
             
             if os.path.isdir(jobDir):
-                numSCFSteps, tSCFAve, tElapsed, finalTotalEnergy = _CollectResults(jobDir, outcarSkipSCFCycles = SkipSCFCycles);
+                numSCFSteps, tSCFAve, tElapsed, finalTotalEnergy = CollectResults(jobDir, outcarSkipSCFCycles = SkipSCFCycles);
                 
                 if numSCFSteps != None and tSCFAve != None and tElapsed != None and finalTotalEnergy != None:
                     print("  -> Collected data for # proc = {0}, NSIM = {1}".format(numProcesses, nsimValue));

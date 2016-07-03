@@ -7,4 +7,4 @@ Contents
 --------
 
 - [Compilation](./Compilation) : *Instructions for building `vasp_gpu` on Balena.*
-- [GPUTest](./GPUTest) : *Scripts used for benchmarking.*
+- [Scripts](./Scripts) : *Scripts used for benchmarking.*
