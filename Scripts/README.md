@@ -13,7 +13,7 @@ Contents
 
 - `GetTimings.py` : *A command-line script for quickly extracting timing information from the files in VASP job folders.*
 
-- `Shared.py` : *A module containing functions for extracting timing information from VASP output files; imported by `CPUTest.py`, `GPUTest.py` and `GetTimings.py`.*
+- `Shared.py` : *A module containing functions for extracting information from VASP output files; imported by `CPUTest.py`, `GPUTest.py` and `GetTimings.py`.*
 
 
 Usage
@@ -25,9 +25,9 @@ These scripts are designed to be run from the scheduler - see the example SLURM 
 
 `GetTimings.py` is called from the command line:
 
-`python GetTimings.py CPU-GeTe_256/vasp_gam`
-
 ```
+python GetTimings.py CPU-GeTe_256/vasp_gam
+
 Analysing "CPU-GeTe_256/vasp_gam"...
   -> # SCF steps: 32
   -> Avgerage t_SCF [s]: 21.93
