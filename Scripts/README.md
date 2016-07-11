@@ -15,6 +15,8 @@ Contents
 
 - `Shared.py` : *A module containing functions for extracting information from VASP output files; imported by `CPUTest.py`, `GPUTest.py` and `GetTimings.py`.*
 
+- `PadCSVs.py` : *Rewrites CSV files to pad rows to a consistent length; required for the "pretty" display on the GitHub website.*
+
 
 Usage
 -----
@@ -36,6 +38,8 @@ Analysing "CPU-GeTe_256/vasp_gam"...
 ```
 
 The optional `--skip_scf_cycles=N` argument can be used to exclude the first *N* SCF steps from the average cycle time.
+
+`PadCSV.py` is a utility script, again called from the command line; type `PadCSV.py -h` for usage instructions.
 
 N.B. The default `python` on Balena does not have the `argparse` module imported by `GetTimings.py` - use the distribution provided by the `python/2.7.8` module instead.
 
