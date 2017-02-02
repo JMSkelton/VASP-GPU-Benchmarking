@@ -1,4 +1,4 @@
-Building `vasp_gpu` on Balena
+Building `vasp-gpu` on Balena
 =============================
 
 These instructions are for building VASP 5.4.1 (05Feb16 revision) on the University of Bath's [Balena](http://www.bath.ac.uk/bucs/services/hpc/facilities/) HPC cluster.
